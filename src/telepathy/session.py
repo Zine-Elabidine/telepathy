@@ -34,7 +34,7 @@ def load_state(key: str) -> dict:
 def _save_state(key: str, state: dict) -> None:
     p = _state_path(key)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(state, indent=1), encoding="utf-8")
+    p.write_text(json.dumps(state, indent=1), encoding="utf-8", newline="\n")
 
 
 # --- links ------------------------------------------------------------------------------
@@ -149,7 +149,7 @@ def build(key: str, binding: Binding) -> Index:
     index = render(binding, per_bundle)
     target = sdir / "MEMORY.md"
     if not target.exists() or target.read_text(encoding="utf-8") != index.text:
-        target.write_text(index.text, encoding="utf-8")
+        target.write_text(index.text, encoding="utf-8", newline="\n")
     _save_state(key, {"key": key, "head": store.head(), "index": index.text,
                       "lines": per_bundle, "collapsed": index.collapsed})
     return index

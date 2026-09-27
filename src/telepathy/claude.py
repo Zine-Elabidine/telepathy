@@ -39,7 +39,7 @@ def _load(path: Path) -> dict:
 def _dump(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8", newline="\n")
     os.replace(tmp, path)
 
 
@@ -90,7 +90,7 @@ def _exclude(root: Path) -> None:
     text = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
     if LOCAL_SETTINGS not in text.splitlines():
         exclude.write_text(text + ("" if text.endswith("\n") or not text else "\n")
-                           + LOCAL_SETTINGS + "\n", encoding="utf-8")
+                           + LOCAL_SETTINGS + "\n", encoding="utf-8", newline="\n")
 
 
 def project_points_here(root: Path, session_dir: Path) -> bool:

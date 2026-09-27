@@ -32,16 +32,17 @@ def _bundle_with(name, n):
     path = store.new_bundle(name)
     for i in range(n):
         (path / f"m{i}.md").write_text(f"---\nname: m{i}\ndescription: \"{'x' * 60}\"\n"
-                                       f"metadata:\n  type: project\n---\nbody\n")
+                                       f"metadata:\n  type: project\n---\nbody\n", encoding="utf-8")
     return store.write_index(name)
 
 
 def test_write_index_files_are_the_truth():
     store.init()
     path = store.new_bundle("proj")
-    (path / "MEMORY.md").write_text("- [Kept title](a.md) — hand written\n- [Gone](gone.md) — x\n")
-    (path / "a.md").write_text("---\nname: a\ndescription: \"aa\"\n---\n")
-    (path / "b.md").write_text("---\nname: b-thing\ndescription: \"bb\"\n---\n")
+    (path / "MEMORY.md").write_text("- [Kept title](a.md) — hand written\n- [Gone](gone.md) — x\n",
+                                    encoding="utf-8")
+    (path / "a.md").write_text("---\nname: a\ndescription: \"aa\"\n---\n", encoding="utf-8")
+    (path / "b.md").write_text("---\nname: b-thing\ndescription: \"bb\"\n---\n", encoding="utf-8")
     lines = store.write_index("proj")
     assert lines == {"a.md": "- [Kept title](a.md) — hand written",
                      "b.md": "- [B thing](b.md) — bb"}

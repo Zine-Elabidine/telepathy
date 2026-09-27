@@ -17,7 +17,10 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("TELEPATHY_MACHINE", "machine-a")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
-    (tmp_path / "gitconfig").write_text("[init]\n\tdefaultBranch = main\n")
+    # git also reads $XDG_CONFIG_HOME/git/ignore (default ~/.config/git/ignore), which may
+    # already ignore .claude/settings.local.json on a real machine
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    (tmp_path / "gitconfig").write_text("[init]\n\tdefaultBranch = main\n", encoding="utf-8")
     return tmp_path
 
 

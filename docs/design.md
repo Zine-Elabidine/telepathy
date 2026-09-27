@@ -88,7 +88,8 @@ write = "my-project"        # where project memories go; user/feedback memories 
 ```
 
 Links are symlinks on Linux/macOS. On Windows they are **directory junctions**, which need
-no admin rights or Developer Mode. *(Still to test on Windows.)*
+no admin rights or Developer Mode. *(Tested on Windows 11, 2026-09-27: reads and writes
+through the junctions work, with no permission prompts.)*
 
 ## 6. Commands *(proposed)*
 
@@ -301,8 +302,16 @@ personal = "personal"
 ```
 
 - Machine names are saved at `tp init` (`--machine NAME`, default: hostname). Renaming with
-  `tp init --machine NEW` carries the choices over. `init` warns when the name is already
-  taken in the store: two machines with the same hostname would otherwise share choices.
+  `tp init --machine NEW` carries the choices over: a saved name was this machine's own, so
+  its choices move; with no saved name, the old name is only the hostname, which another
+  machine may share, so they are copied and left in place. `init` warns when the name is
+  already taken in the store: two machines with the same name would share choices.
+  First-format entries don't count as taken (they belong to no machine in particular).
+- `TELEPATHY_MACHINE` overrides the saved name, so `init --machine` refuses while it is set.
+- Files are written with LF on every platform, and `init` never commits as the fallback
+  `telepathy@<host>`: people set their identity on the store right after init (found on the
+  first Windows run, where the whole settings file flipped to CRLF and the init commit went
+  out under the fallback name).
 - On a machine with no choice for a project, nothing is loaded. The first session there says
   once what the other machines load and suggests the `tp use` command.
 - Bundle descriptions (`tp new NAME --description ...`) go into the index header, so the
@@ -311,7 +320,8 @@ personal = "personal"
 
 ## 15. Open questions
 
-1. Windows: do junctions plus the permission rules behave as they did on Linux?
+1. ~~Windows: do junctions plus the permission rules behave as they did on Linux?~~ Yes
+   (2026-09-27).
 2. Two sessions in two projects that share `personal`: both write into the same bundle.
    Regenerating indexes from files should make this safe, but it needs a test.
 3. Does Claude reliably write into the right bundle subfolder across models, or only

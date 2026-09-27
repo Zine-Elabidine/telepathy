@@ -54,7 +54,7 @@ def machine() -> str:
 
 def set_machine(name: str) -> None:
     home().mkdir(parents=True, exist_ok=True)
-    (home() / "machine").write_text(name.strip() + "\n", encoding="utf-8")
+    (home() / "machine").write_text(name.strip() + "\n", encoding="utf-8", newline="\n")
 
 
 def tilde(path: Path) -> str:

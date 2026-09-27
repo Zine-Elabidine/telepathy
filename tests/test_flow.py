@@ -24,17 +24,19 @@ def test_use_writes_settings_and_links(tmp_path, monkeypatch, remote, capsys):
     key = "github.com/me/my-project"
     sdir = session.session_dir(key)
 
-    settings = json.loads((project / ".claude/settings.local.json").read_text())
+    settings = json.loads((project / ".claude/settings.local.json").read_text(encoding="utf-8"))
     assert settings["autoMemoryDirectory"] == config.tilde(sdir)
     assert set(claude.allow_rules()) <= set(settings["permissions"]["allow"])
     # never committed into the project
-    assert ".claude/settings.local.json" in (project / ".git/info/exclude").read_text()
+    exclude = (project / ".git/info/exclude").read_text(encoding="utf-8")
+    assert ".claude/settings.local.json" in exclude
     run("git", "check-ignore", "-q", ".claude/settings.local.json", cwd=project)
 
     assert session.is_link(sdir / "personal") and session.is_link(sdir / "my-project")
-    assert "## my-project" in (sdir / "MEMORY.md").read_text()
+    assert "## my-project" in (sdir / "MEMORY.md").read_text(encoding="utf-8")
     # hooks installed in the (fake) user settings, pointing at this interpreter
-    hooks = json.loads((config.claude_config_dir() / "settings.json").read_text())["hooks"]
+    user_settings = config.claude_config_dir() / "settings.json"
+    hooks = json.loads(user_settings.read_text(encoding="utf-8"))["hooks"]
     assert "telepathy hook start" in hooks["SessionStart"][0]["hooks"][0]["command"]
     # binding reached the remote
     assert "my-project" in run("git", "--git-dir", str(remote), "show", "main:projects.toml")
@@ -44,10 +46,10 @@ def test_existing_settings_are_kept(tmp_path, monkeypatch, remote):
     project = setup_machine(tmp_path, monkeypatch, "machine-a", remote, "p")
     (project / ".claude").mkdir()
     (project / ".claude/settings.local.json").write_text(
-        json.dumps({"model": "x", "permissions": {"allow": ["Bash(ls)"]}}))
+        json.dumps({"model": "x", "permissions": {"allow": ["Bash(ls)"]}}), encoding="utf-8")
     monkeypatch.chdir(project)
     main(["use", "personal", "my-project"])
-    s = json.loads((project / ".claude/settings.local.json").read_text())
+    s = json.loads((project / ".claude/settings.local.json").read_text(encoding="utf-8"))
     assert s["model"] == "x" and "Bash(ls)" in s["permissions"]["allow"]
 
 
@@ -63,7 +65,7 @@ def test_session_round_trip_between_machines(tmp_path, monkeypatch, remote):
     memory(sdir / "personal" / "user_tabs.md", "user-tabs", "user", "Prefers tabs")
     # ... and one stray at the top of the memory folder, with its index line.
     memory(sdir / "project_staging.md", "project-staging", "project", "Staging is kestrel-02")
-    with (sdir / "MEMORY.md").open("a") as f:
+    with (sdir / "MEMORY.md").open("a", encoding="utf-8") as f:
         f.write("- [Tabs](personal/user_tabs.md) — prefers tabs\n"
                 "- [Staging](project_staging.md) — staging server name\n")
     monkeypatch.setattr(claude, "spawn_background", lambda *a: store.sync())
@@ -73,9 +75,9 @@ def test_session_round_trip_between_machines(tmp_path, monkeypatch, remote):
     assert (store.bundle_path("my-project") / "project_staging.md").exists()
     assert not (sdir / "project_staging.md").exists()
     assert "- [Staging](project_staging.md) — staging server name" in \
-        (store.bundle_path("my-project") / "MEMORY.md").read_text()
+        (store.bundle_path("my-project") / "MEMORY.md").read_text(encoding="utf-8")
     assert "- [Tabs](user_tabs.md) — prefers tabs" in \
-        (store.bundle_path("personal") / "MEMORY.md").read_text()
+        (store.bundle_path("personal") / "MEMORY.md").read_text(encoding="utf-8")
 
     # Machine B: same project at another path. It has no choice of its own yet, so it is
     # told (once) what machine A loads, and chooses for itself.
@@ -88,7 +90,7 @@ def test_session_round_trip_between_machines(tmp_path, monkeypatch, remote):
     main(["use", "personal", "my-project"])
     assert hook_start({"cwd": str(project_b)}) == ""          # set up by `tp use` already
     assert "](my-project/project_staging.md)" in \
-        (session.session_dir(key) / "MEMORY.md").read_text()
+        (session.session_dir(key) / "MEMORY.md").read_text(encoding="utf-8")
     assert claude.project_points_here(project_b, session.session_dir(key))
     assert (session.session_dir(key) / "my-project" / "project_staging.md").exists()
 
@@ -120,8 +122,9 @@ def test_conflict_newer_wins_and_other_kept(tmp_path, monkeypatch, remote):
     memory(store.bundle_path("my-project") / f, "x", "project", "from A", "2026-01-02T00:00:00Z")
     res = store.sync()
     assert f"bundles/my-project/{f}" in res.conflicts
-    assert "from B" in (store.bundle_path("my-project") / f).read_text()   # newer wins
-    assert "from A" in (store.bundle_path("my-project") / "project_x.conflict-1.md").read_text()
+    bundle = store.bundle_path("my-project")
+    assert "from B" in (bundle / f).read_text(encoding="utf-8")   # newer wins
+    assert "from A" in (bundle / "project_x.conflict-1.md").read_text(encoding="utf-8")
     assert res.pushed
 
 
@@ -147,13 +150,13 @@ def test_hooks_remove_restores(tmp_path, monkeypatch):
     path.parent.mkdir(parents=True)
     other = {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "echo hi"}]}]},
              "model": "opus"}
-    path.write_text(json.dumps(other))
+    path.write_text(json.dumps(other), encoding="utf-8")
     claude.install_hooks()
     claude.install_hooks()                         # idempotent
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     assert len(data["hooks"]["SessionStart"]) == 2
     assert claude.remove_hooks()
-    assert json.loads(path.read_text()) == other
+    assert json.loads(path.read_text(encoding="utf-8")) == other
     assert (path.parent / "settings.json.before-telepathy").exists()
 
 
@@ -194,7 +197,7 @@ def test_each_machine_chooses_its_own_bundles(tmp_path, monkeypatch, remote):
     main(["new", "windows", "--description", "Windows-specific: paths, shells, quirks"])
     main(["use", "personal", "windows", "my-project", "--write", "my-project"])
     key = "github.com/me/my-project"
-    index = (session.session_dir(key) / "MEMORY.md").read_text()
+    index = (session.session_dir(key) / "MEMORY.md").read_text(encoding="utf-8")
     assert "`windows/` = Windows-specific: paths, shells, quirks" in index
     assert session.is_link(session.session_dir(key) / "windows")
 
@@ -209,10 +212,11 @@ def test_each_machine_chooses_its_own_bundles(tmp_path, monkeypatch, remote):
 def test_first_format_is_read_as_this_machines(tmp_path, monkeypatch):
     store.init()
     (config.store_dir() / "projects.toml").write_text(
-        '["dir/Research"]\nbundles = ["personal", "research"]\nwrite = "research"\n')
+        '["dir/Research"]\nbundles = ["personal", "research"]\nwrite = "research"\n',
+        encoding="utf-8")
     assert store.load_bindings()["dir/Research"].bundles == ["personal", "research"]
     store.save_binding("local/x", store.make_binding(["x"]))
-    text = (config.store_dir() / "projects.toml").read_text()
+    text = (config.store_dir() / "projects.toml").read_text(encoding="utf-8")
     assert '[machines."machine-a"."dir/Research"]' in text and '["dir/Research"]' not in text
 
 
@@ -220,13 +224,85 @@ def test_rename_machine_and_same_name_warning(tmp_path, monkeypatch, remote, cap
     project = setup_machine(tmp_path, monkeypatch, "machine-a", remote, "p")
     monkeypatch.chdir(project)
     main(["use", "personal", "my-project"])
+    monkeypatch.delenv("TELEPATHY_MACHINE")          # from here on, the saved name counts
     main(["init", "--machine", "linux"])
     assert "linux" in store.load_all() and "machine-a" not in store.load_all()
+    assert config.machine() == "linux"
+    assert store.load_bindings()["github.com/me/my-project"].bundles == ["personal", "my-project"]
 
     # a second machine whose hostname-based default collides with an existing name
     monkeypatch.setenv("TELEPATHY_HOME", str(tmp_path / "machine-b" / ".telepathy"))
-    monkeypatch.delenv("TELEPATHY_MACHINE")
     monkeypatch.setattr(config.socket, "gethostname", lambda: "linux")
     capsys.readouterr()
     main(["init", str(remote)])
-    assert "already called 'linux'" in capsys.readouterr().out
+    assert "'linux' (this machine's hostname) already has bundle choices" in capsys.readouterr().out
+
+
+def _unnamed_machine(tmp_path, monkeypatch, name, hostname):
+    """A machine that never saved a name (e.g. set up before names existed): it goes by its
+    hostname, which it may share with another machine."""
+    monkeypatch.setenv("TELEPATHY_HOME", str(tmp_path / name / ".telepathy"))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / name / ".claude"))
+    monkeypatch.delenv("TELEPATHY_MACHINE", raising=False)
+    monkeypatch.setattr(config.socket, "gethostname", lambda: hostname)
+
+
+def test_naming_an_unnamed_machine_keeps_its_choices(tmp_path, monkeypatch, remote, capsys):
+    _unnamed_machine(tmp_path, monkeypatch, "machine-a", "shared-host")
+    main(["init", str(remote)])
+    (config.home() / "machine").unlink()             # choices saved before names existed
+    project = make_project(tmp_path / "machine-a" / "p")
+    monkeypatch.chdir(project)
+    main(["use", "personal", "my-project"])
+    key = "github.com/me/my-project"
+    assert store.named_machines() == {"shared-host"}
+
+    capsys.readouterr()
+    main(["init", "--machine", "windows"])
+    assert "Copied 1 project choices from 'shared-host'" in capsys.readouterr().out
+    assert config.machine() == "windows"
+    assert store.load_bindings()[key].bundles == ["personal", "my-project"]   # not orphaned
+    # the hostname may be another machine's too, so its choices stay where they were
+    assert store.other_machines(key)["shared-host"].bundles == ["personal", "my-project"]
+
+
+def test_first_format_store_gives_no_false_warning(tmp_path, monkeypatch, remote, capsys):
+    _unnamed_machine(tmp_path, monkeypatch, "machine-a", "some-host")
+    main(["init", str(remote)])
+    (config.store_dir() / "projects.toml").write_text(
+        '["dir/Research"]\nbundles = ["personal", "research"]\nwrite = "research"\n',
+        encoding="utf-8")
+    (config.home() / "machine").unlink()
+    capsys.readouterr()
+    main(["init"])
+    assert "Warning" not in capsys.readouterr().out
+    assert store.named_machines() == set()
+
+
+def test_machine_flag_refused_while_env_overrides_it(monkeypatch):
+    monkeypatch.setenv("TELEPATHY_MACHINE", "from-env")
+    try:
+        main(["init", "--machine", "other"])
+    except SystemExit as e:
+        assert "TELEPATHY_MACHINE" in str(e.code)
+    else:
+        raise AssertionError("init --machine should refuse while TELEPATHY_MACHINE is set")
+    assert not (config.home() / "machine").exists()
+
+
+def test_init_commits_only_as_the_user(tmp_path, monkeypatch):
+    store.init()                                     # the test gitconfig has no identity
+    assert run("git", "log", "--all", "--format=%ae", cwd=config.store_dir()).strip() == ""
+    assert store.dirty()                             # the next commit takes the files along
+
+
+def test_written_files_use_lf(tmp_path, monkeypatch, remote):
+    project = setup_machine(tmp_path, monkeypatch, "machine-a", remote, "p")
+    monkeypatch.chdir(project)
+    main(["use", "personal", "my-project"])
+    written = [project / ".claude/settings.local.json",
+               config.claude_config_dir() / "settings.json",
+               config.store_dir() / "projects.toml", config.home() / "machine",
+               session.session_dir("github.com/me/my-project") / "MEMORY.md"]
+    for path in written:
+        assert b"\r\n" not in path.read_bytes(), path

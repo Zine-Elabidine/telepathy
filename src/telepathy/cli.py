@@ -28,20 +28,36 @@ def _need_store() -> None:
 # --- commands ----------------------------------------------------------------------------
 
 def cmd_init(a) -> None:
+    if a.machine and os.environ.get("TELEPATHY_MACHINE"):
+        sys.exit("tp: TELEPATHY_MACHINE is set, and it overrides any saved name; unset it to "
+                 "name this machine with --machine")
     named_before = (config.home() / "machine").exists()
-    old_name = config.machine()
+    old_name = config.machine()              # the saved name, else the hostname
+    name = a.machine or old_name
     if a.machine or not named_before:
-        config.set_machine(a.machine or old_name)
+        config.set_machine(name)
     how = store.init(a.url)
-    if a.machine and named_before and a.machine != old_name:
-        moved = store.rename_machine(old_name, a.machine)
-        store.sync(timeout=20)
-        print(f"Renamed this machine {old_name!r} -> {a.machine!r}"
-              + (f" ({moved} project choices moved)" if moved else ""))
-    elif not named_before and not a.machine and config.machine() in store.load_all():
-        print(f"Warning: another machine is already called {config.machine()!r} in the "
-              "store, so both would share one set of bundle choices. Give this one its own "
-              "name: tp init --machine <name>")
+    taken = store.named_machines()
+    if name != old_name:
+        # A saved name was this machine's own, so its choices move. Without one, old_name is
+        # just the hostname, which another machine may share: copy, and leave theirs alone.
+        n = store.rename_machine(old_name, name, keep_old=not named_before)
+        if n:
+            store.sync(timeout=20)
+        if named_before:
+            print(f"Renamed this machine {old_name!r} -> {name!r}"
+                  + (f" ({n} project choices moved)" if n else ""))
+        elif n:
+            print(f"Copied {n} project choices from {old_name!r} (this machine's hostname) to "
+                  f"{name!r}. They stay under {old_name!r} too, in case another machine has "
+                  "that hostname.")
+        if name in taken:
+            print(f"Warning: another machine is already called {name!r} in the store, so both "
+                  "now share one set of bundle choices. Pick another: tp init --machine <name>")
+    elif not named_before and name in taken:
+        print(f"Warning: {name!r} (this machine's hostname) already has bundle choices in the "
+              "store. If another machine saved them, both would share one set; give this one "
+              "its own name: tp init --machine <name>")
     where = config.store_dir()
     print({"exists": f"Store already set up at {where}",
            "cloned": f"Cloned your store into {where}",
@@ -53,6 +69,10 @@ def cmd_init(a) -> None:
         path = claude.install_hooks()
         print(f"Claude Code hooks installed in {path}")
     print(f"This machine is called {config.machine()!r} in the store.")
+    if not store.has_identity():
+        print("Git doesn't know who you are here, so store commits would be authored as "
+              f"telepathy@<host>. Set it on the store:\n  git -C {where} config user.email "
+              f"<you@example.com> && git -C {where} config user.name \"<Your Name>\"")
     print(f"Bundles: {', '.join(store.list_bundles()) or '(none)'}")
     print("Next: in a project folder, run `tp use personal <project-bundle>`.")
 
@@ -206,7 +226,7 @@ def _hint_other_machines(key: str) -> str:
     if not others:
         return ""
     flag.parent.mkdir(parents=True, exist_ok=True)
-    flag.write_text("", encoding="utf-8")
+    flag.write_text("", encoding="utf-8", newline="\n")
     lines = [f"Telepathy: this project loads no memory bundles on this machine "
              f"({config.machine()}) yet. Other machines use:"]
     lines += [f"- {m}: {' '.join(b.bundles)}" for m, b in others.items()]

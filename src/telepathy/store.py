@@ -32,9 +32,9 @@ def new_bundle(name: str, description: str = "") -> Path:
     manifest = path / "bundle.toml"
     if not manifest.exists() or (description and description != bundle_description(name)):
         manifest.write_text(f"name = {json.dumps(name)}\ndescription = {json.dumps(description)}\n",
-                            encoding="utf-8")
+                            encoding="utf-8", newline="\n")
     if not (path / "MEMORY.md").exists():
-        (path / "MEMORY.md").write_text("", encoding="utf-8")
+        (path / "MEMORY.md").write_text("", encoding="utf-8", newline="\n")
     return path
 
 
@@ -70,7 +70,7 @@ def write_index(bundle: str, updates: dict[str, str] | None = None) -> dict[str,
     text = "".join(line + "\n" for line in out.values())
     p = bundle_path(bundle) / "MEMORY.md"
     if not p.exists() or p.read_text(encoding="utf-8") != text:
-        p.write_text(text, encoding="utf-8")
+        p.write_text(text, encoding="utf-8", newline="\n")
     return out
 
 
@@ -107,6 +107,16 @@ def parse_projects(text: str) -> dict[str, dict[str, Binding]]:
     return out
 
 
+def named_machines() -> set[str]:
+    """Machines with choices saved under their own name. Entries in the first format don't
+    count: they belong to no machine in particular, and load_all() gives them to the reader."""
+    p = config.store_dir() / PROJECTS
+    try:
+        return set(tomllib.loads(p.read_text(encoding="utf-8")).get("machines", {}))
+    except (OSError, tomllib.TOMLDecodeError):
+        return set()
+
+
 def load_all() -> dict[str, dict[str, Binding]]:
     p = config.store_dir() / PROJECTS
     return parse_projects(p.read_text(encoding="utf-8")) if p.exists() else {}
@@ -134,21 +144,28 @@ def dump_projects(everything: dict[str, dict[str, Binding]]) -> str:
     return "\n".join(parts)
 
 
-def rename_machine(old: str, new: str) -> int:
+def rename_machine(old: str, new: str, keep_old: bool = False) -> int:
+    """Give `old`'s choices to `new`. With keep_old they are copied, not moved: use it when
+    `old` is only a hostname, which another machine may share."""
     everything = load_all()
-    moved = everything.pop(old, {})
+    moved = everything.get(old, {})
     if not moved:
         return 0
+    if not keep_old:
+        del everything[old]
     everything.setdefault(new, {}).update(moved)
-    (config.store_dir() / PROJECTS).write_text(dump_projects(everything), encoding="utf-8")
-    commit(f"tp: machine {old} is now {new}")
+    (config.store_dir() / PROJECTS).write_text(dump_projects(everything), encoding="utf-8",
+                                               newline="\n")
+    commit(f"tp: machine {new} starts from {old}'s choices" if keep_old
+           else f"tp: machine {old} is now {new}")
     return len(moved)
 
 
 def save_binding(key: str, binding: Binding) -> None:
     everything = load_all()
     everything.setdefault(config.machine(), {})[key] = binding
-    (config.store_dir() / PROJECTS).write_text(dump_projects(everything), encoding="utf-8")
+    (config.store_dir() / PROJECTS).write_text(dump_projects(everything), encoding="utf-8",
+                                               newline="\n")
 
 
 def make_binding(bundles: list[str], write: str | None = None) -> Binding:
@@ -185,8 +202,11 @@ def init(url: str | None = None) -> str:
         new_bundle("personal", "Who I am and how I like to work, in every project")
     gitignore = store / ".gitignore"
     if not gitignore.exists():
-        gitignore.write_text("*.tmp\n.DS_Store\n", encoding="utf-8")
-    commit("tp init")
+        gitignore.write_text("*.tmp\n.DS_Store\n", encoding="utf-8", newline="\n")
+    # Never under the fallback identity: people set theirs on the store right after init,
+    # and the next commit (tp use, a session end) takes these files along.
+    if has_identity():
+        commit("tp init")
     return how
 
 
@@ -207,9 +227,13 @@ def commit(message: str) -> bool:
     return True
 
 
+def has_identity() -> bool:
+    return ok(config.store_dir(), "config", "user.email")
+
+
 def _identity() -> list[str]:
     """Commit as the user if git knows who they are, else as `telepathy@<machine>`."""
-    if ok(config.store_dir(), "config", "user.email"):
+    if has_identity():
         return []
     return ["-c", "user.name=telepathy", "-c", f"user.email=telepathy@{_safe_host()}"]
 
@@ -291,11 +315,13 @@ def _resolve_conflicts() -> list[str]:
         ours, theirs = _show(2, rel), _show(3, rel)
         dest = store / rel
         if ours is None or theirs is None:
-            dest.write_text(ours if ours is not None else theirs or "", encoding="utf-8")
+            dest.write_text(ours if ours is not None else theirs or "", encoding="utf-8",
+                            newline="\n")
         elif rel.endswith("MEMORY.md"):
             lines = memfile.parse_index(theirs)
             lines.update(memfile.parse_index(ours))
-            dest.write_text("".join(v + "\n" for v in lines.values()), encoding="utf-8")
+            dest.write_text("".join(v + "\n" for v in lines.values()), encoding="utf-8",
+                            newline="\n")
         elif rel == PROJECTS:
             merged: dict[str, dict[str, Binding]] = {}
             for text in (theirs, ours):          # ours last: it wins on the same entry
@@ -304,16 +330,16 @@ def _resolve_conflicts() -> list[str]:
                         merged.setdefault(machine, {}).update(projects)
                 except tomllib.TOMLDecodeError:
                     pass
-            dest.write_text(dump_projects(merged), encoding="utf-8")
+            dest.write_text(dump_projects(merged), encoding="utf-8", newline="\n")
         else:
             m_ours = memfile.frontmatter(ours).get("modified", "")
             m_theirs = memfile.frontmatter(theirs).get("modified", "")
             win, lose = (theirs, ours) if m_theirs > m_ours else (ours, theirs)
-            dest.write_text(win, encoding="utf-8")
+            dest.write_text(win, encoding="utf-8", newline="\n")
             n = 1
             while (alt := dest.with_name(f"{dest.stem}.conflict-{n}{dest.suffix}")).exists():
                 n += 1
-            alt.write_text(lose, encoding="utf-8")
+            alt.write_text(lose, encoding="utf-8", newline="\n")
         git(store, "add", "-A", "--", rel)
     git(store, "add", "-A")
     return files
