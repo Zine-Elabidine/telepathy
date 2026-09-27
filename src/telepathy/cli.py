@@ -168,6 +168,14 @@ def _payload() -> dict:
         return {}
 
 
+def _recently_fetched(minutes: int = 15) -> bool:
+    stamp = config.store_dir() / ".git" / "FETCH_HEAD"
+    try:
+        return (datetime.now().timestamp() - stamp.stat().st_mtime) < minutes * 60
+    except OSError:
+        return False
+
+
 def hook_start(payload: dict) -> str:
     if not store.exists():
         return ""
@@ -178,9 +186,11 @@ def hook_start(payload: dict) -> str:
     old_state = session.load_state(key)
     binding = store.load_bindings().get(key)
     if binding is None:
-        # Maybe another machine chose bundles for this project: look before giving up.
-        store.sync(push=False, timeout=10)
-        binding = store.load_bindings().get(key)
+        # Maybe another machine chose bundles for this project. Look, but at most every
+        # 15 minutes, so projects without bundles don't pay a network call per session.
+        if not _recently_fetched():
+            store.sync(push=False, timeout=10)
+            binding = store.load_bindings().get(key)
         if binding is None:
             return ""
     session.harvest(key, binding)             # anything left over from a session that crashed
