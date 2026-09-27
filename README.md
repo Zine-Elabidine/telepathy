@@ -29,7 +29,7 @@ get pushed when the session ends.
 ## Try it (from source)
 
 ```
-uv tool install git+ssh://git@github.com/Zine-Elabidine/telepathy   # gives `tp`
+uv tool install git+https://github.com/Zine-Elabidine/telepathy   # gives `tp`
 tp init git@github.com:you/my-memories.git   # an empty private repo, or omit for local-only
 cd ~/code/my-project
 tp import ~/.claude/projects/<this-project>/memory my-project   # optional: bring existing memories
