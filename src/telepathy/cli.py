@@ -237,6 +237,9 @@ def hook_end(payload: dict) -> str:
 def cmd_hook(a) -> None:
     """Never break the agent's session: log errors and exit 0."""
     try:
+        # Windows pipes default to the ANSI code page; memories can hold any character.
+        sys.stdin.reconfigure(encoding="utf-8")
+        sys.stdout.reconfigure(encoding="utf-8")
         text = (hook_start if a.event == "start" else hook_end)(_payload())
         if text:
             print(text)
