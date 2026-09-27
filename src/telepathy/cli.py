@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import __version__, claude, config, memfile, session, store
-from .gitx import GitError, project_key
+from .gitx import GitError, key_to_dirname, project_key
 
 
 def _project(path: Path | None = None) -> tuple[str, Path]:
@@ -28,6 +28,8 @@ def _need_store() -> None:
 # --- commands ----------------------------------------------------------------------------
 
 def cmd_init(a) -> None:
+    if a.machine or not (config.home() / "machine").exists():
+        config.set_machine(a.machine or config.machine())
     how = store.init(a.url)
     where = config.store_dir()
     print({"exists": f"Store already set up at {where}",
@@ -39,6 +41,7 @@ def cmd_init(a) -> None:
     if not a.no_hooks:
         path = claude.install_hooks()
         print(f"Claude Code hooks installed in {path}")
+    print(f"This machine is called {config.machine()!r} in the store.")
     print(f"Bundles: {', '.join(store.list_bundles()) or '(none)'}")
     print("Next: in a project folder, run `tp use personal <project-bundle>`.")
 
@@ -66,7 +69,7 @@ def cmd_use(a) -> None:
     index = session.build(key, binding)
     changed = claude.ensure_project(root, session.session_dir(key))
     res = store.sync(timeout=20)
-    print(f"{key} now uses: {', '.join(binding.bundles)}")
+    print(f"{key} on this machine ({config.machine()}) now loads: {', '.join(binding.bundles)}")
     print(f"  new project memories go to {binding.write!r}"
           + (f", memories about you to {binding.personal!r}" if binding.personal else ""))
     print(f"  index: {index.lines} lines, {index.bytes} bytes"
@@ -120,12 +123,16 @@ def cmd_status(a) -> None:
     key, root = found
     binding = store.load_bindings().get(key)
     print(f"\nproject: {key}")
+    for m, b in store.other_machines(key).items():
+        print(f"  on {m}: {', '.join(b.bundles)}")
     if binding is None:
-        print("  no bundles chosen (Claude Code uses its own memory here); `tp use ...`")
+        print(f"  on this machine ({config.machine()}): no bundles chosen, so Claude Code "
+              "uses its own memory here; `tp use ...`")
         return
     sdir = session.session_dir(key)
     index = session.render(binding, {b: store.read_index(b) for b in binding.bundles})
-    print(f"  bundles: {', '.join(binding.bundles)}  (writes: {binding.write})")
+    print(f"  on this machine ({config.machine()}): {', '.join(binding.bundles)}"
+          f"  (writes: {binding.write})")
     print(f"  memory folder: {sdir}")
     print(f"  Claude Code setting: "
           f"{'ok' if claude.project_points_here(root, sdir) else 'missing (next session start fixes it)'}")
@@ -176,6 +183,29 @@ def _recently_fetched(minutes: int = 15) -> bool:
         return False
 
 
+def _hint_other_machines(key: str) -> str:
+    """No bundles on this machine for this project. If another machine has some, say so
+    once, so the user can choose here too. Each machine chooses for itself."""
+    flag = config.state_dir() / (key_to_dirname(key) + ".hinted")
+    if flag.exists():
+        return ""
+    if not _recently_fetched():              # at most one network call per 15 minutes
+        store.sync(push=False, timeout=10)
+    others = store.other_machines(key)
+    if not others:
+        return ""
+    flag.parent.mkdir(parents=True, exist_ok=True)
+    flag.write_text("", encoding="utf-8")
+    lines = [f"Telepathy: this project loads no memory bundles on this machine "
+             f"({config.machine()}) yet. Other machines use:"]
+    lines += [f"- {m}: {' '.join(b.bundles)}" for m, b in others.items()]
+    first = next(iter(others.values()))
+    lines.append(f"Tell the user: to load bundles here, run `tp use {' '.join(first.bundles)}` "
+                 "in this folder (add or drop bundles as they like); it applies from the "
+                 "next session. This message is shown once.")
+    return "\n".join(lines)
+
+
 def hook_start(payload: dict) -> str:
     if not store.exists():
         return ""
@@ -186,13 +216,7 @@ def hook_start(payload: dict) -> str:
     old_state = session.load_state(key)
     binding = store.load_bindings().get(key)
     if binding is None:
-        # Maybe another machine chose bundles for this project. Look, but at most every
-        # 15 minutes, so projects without bundles don't pay a network call per session.
-        if not _recently_fetched():
-            store.sync(push=False, timeout=10)
-            binding = store.load_bindings().get(key)
-        if binding is None:
-            return ""
+        return _hint_other_machines(key)
     session.harvest(key, binding)             # anything left over from a session that crashed
     res = store.sync(push=False, timeout=10)
     index = session.build(key, binding)
@@ -264,14 +288,15 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("init", help="set up this machine: clone or create your store, install hooks")
     s.add_argument("url", nargs="?", help="your private memory repo (omit to create a local store)")
     s.add_argument("--no-hooks", action="store_true", help="don't touch Claude Code settings")
+    s.add_argument("--machine", help="this machine's name in the store (default: hostname)")
     s.set_defaults(fn=cmd_init)
 
-    s = sub.add_parser("use", help="choose the bundles this project loads")
+    s = sub.add_parser("use", help="choose the bundles this project loads on this machine")
     s.add_argument("bundles", nargs="+")
     s.add_argument("--write", help="bundle for new project memories (default: the last non-personal one)")
     s.set_defaults(fn=cmd_use)
 
-    s = sub.add_parser("new", help="create an empty bundle")
+    s = sub.add_parser("new", help="create a bundle (or change its --description)")
     s.add_argument("name")
     s.add_argument("--description")
     s.set_defaults(fn=cmd_new)

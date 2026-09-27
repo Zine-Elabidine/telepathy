@@ -92,13 +92,10 @@ def render(binding: Binding, per_bundle: dict[str, dict[str, str]]) -> Index:
     """One section per bundle, write bundle first. If the whole thing would not fit in what
     Claude Code loads, the biggest bundles collapse to a pointer at their own index."""
     order = [binding.write] + [b for b in binding.bundles if b != binding.write]
-    roles = []
-    if binding.personal and binding.personal != binding.write:
-        roles.append(f"`{binding.personal}/` is about the user and applies to every project")
-    roles.append(f"`{binding.write}/` is this project")
-    head = [HEADER,
-            "Memories live in bundle folders: " + "; ".join(roles) + ". Save each new memory "
-            "inside the folder it belongs to and add its line under that folder's section.", ""]
+    head = [HEADER, "Memories live in bundle folders: " + "; ".join(
+        f"`{b}/` = {_role(binding, b)}" for b in order)
+        + ". Save each new memory inside the folder it belongs to and add its line under "
+          "that folder's section.", ""]
     collapsed: list[str] = []
 
     def build() -> str:
@@ -123,6 +120,15 @@ def render(binding: Binding, per_bundle: dict[str, dict[str, str]]) -> Index:
         collapsed.append(candidates[0])
         text = build()
     return Index(text, text.count("\n") + 1, len(text.encode("utf-8")), collapsed)
+
+
+def _role(binding: Binding, bundle: str) -> str:
+    desc = store.bundle_description(bundle)
+    if bundle == binding.personal:
+        return desc or "about the user, applies to every project"
+    if bundle == binding.write:
+        return (desc + "; " if desc else "") + "this project (the default for project memories)"
+    return desc or "extra knowledge"
 
 
 def _too_big(text: str) -> bool:

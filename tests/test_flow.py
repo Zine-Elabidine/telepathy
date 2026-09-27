@@ -77,12 +77,18 @@ def test_session_round_trip_between_machines(tmp_path, monkeypatch, remote):
     assert "- [Tabs](user_tabs.md) — prefers tabs" in \
         (store.bundle_path("personal") / "MEMORY.md").read_text()
 
-    # Machine B: same project at another path. No `tp use` needed.
+    # Machine B: same project at another path. It has no choice of its own yet, so it is
+    # told (once) what machine A loads, and chooses for itself.
     project_b = setup_machine(tmp_path, monkeypatch, "machine-b", remote, "elsewhere/my-project")
     out = hook_start({"cwd": str(project_b)})
-    assert "from the next session" in out          # first session on this machine
-    assert "kestrel-02" not in out                 # index only, bodies are read on demand
-    assert "](my-project/project_staging.md)" in out
+    assert "machine-a: personal my-project" in out and "tp use personal my-project" in out
+    assert hook_start({"cwd": str(project_b)}) == ""          # shown once
+    assert not (project_b / ".claude").exists()               # nothing chosen, nothing changed
+    monkeypatch.chdir(project_b)
+    main(["use", "personal", "my-project"])
+    assert hook_start({"cwd": str(project_b)}) == ""          # set up by `tp use` already
+    assert "](my-project/project_staging.md)" in \
+        (session.session_dir(key) / "MEMORY.md").read_text()
     assert claude.project_points_here(project_b, session.session_dir(key))
     assert (session.session_dir(key) / "my-project" / "project_staging.md").exists()
 
@@ -175,4 +181,36 @@ def test_plain_folder_project(tmp_path, monkeypatch, remote):
     main(["init", str(remote)])
     other = tmp_path / "machine-b" / "somewhere" / "Research"
     other.mkdir(parents=True)
-    assert "from the next session" in hook_start({"cwd": str(other)})
+    assert "machine-a: personal research" in hook_start({"cwd": str(other)})
+
+
+def test_each_machine_chooses_its_own_bundles(tmp_path, monkeypatch, remote):
+    project_a = setup_machine(tmp_path, monkeypatch, "machine-a", remote, "a/p")
+    monkeypatch.chdir(project_a)
+    main(["use", "personal", "my-project"])
+
+    project_b = setup_machine(tmp_path, monkeypatch, "machine-b", remote, "b/p")
+    monkeypatch.chdir(project_b)
+    main(["new", "windows", "--description", "Windows-specific: paths, shells, quirks"])
+    main(["use", "personal", "windows", "my-project", "--write", "my-project"])
+    key = "github.com/me/my-project"
+    index = (session.session_dir(key) / "MEMORY.md").read_text()
+    assert "`windows/` = Windows-specific: paths, shells, quirks" in index
+    assert session.is_link(session.session_dir(key) / "windows")
+
+    use_machine(tmp_path, monkeypatch, "machine-a")
+    store.sync()
+    assert store.load_bindings()[key].bundles == ["personal", "my-project"]   # A unchanged
+    assert store.other_machines(key)["machine-b"].bundles == ["personal", "windows", "my-project"]
+    hook_start({"cwd": str(project_a)})
+    assert not (session.session_dir(key) / "windows").exists()
+
+
+def test_first_format_is_read_as_this_machines(tmp_path, monkeypatch):
+    store.init()
+    (config.store_dir() / "projects.toml").write_text(
+        '["dir/Research"]\nbundles = ["personal", "research"]\nwrite = "research"\n')
+    assert store.load_bindings()["dir/Research"].bundles == ["personal", "research"]
+    store.save_binding("local/x", store.make_binding(["x"]))
+    text = (config.store_dir() / "projects.toml").read_text()
+    assert '[machines."machine-a"."dir/Research"]' in text and '["dir/Research"]' not in text

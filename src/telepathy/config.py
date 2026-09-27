@@ -40,7 +40,21 @@ def claude_config_dir() -> Path:
 
 
 def machine() -> str:
-    return os.environ.get("TELEPATHY_MACHINE") or socket.gethostname()
+    """This machine's name in the store. Saved at `tp init`, so it stays the same even if
+    the hostname changes."""
+    if name := os.environ.get("TELEPATHY_MACHINE"):
+        return name
+    try:
+        if name := (home() / "machine").read_text(encoding="utf-8").strip():
+            return name
+    except OSError:
+        pass
+    return socket.gethostname()
+
+
+def set_machine(name: str) -> None:
+    home().mkdir(parents=True, exist_ok=True)
+    (home() / "machine").write_text(name.strip() + "\n", encoding="utf-8")
 
 
 def tilde(path: Path) -> str:

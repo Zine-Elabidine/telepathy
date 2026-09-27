@@ -30,12 +30,20 @@ def new_bundle(name: str, description: str = "") -> Path:
     path = bundle_path(name)
     path.mkdir(parents=True, exist_ok=True)
     manifest = path / "bundle.toml"
-    if not manifest.exists():
+    if not manifest.exists() or (description and description != bundle_description(name)):
         manifest.write_text(f"name = {json.dumps(name)}\ndescription = {json.dumps(description)}\n",
                             encoding="utf-8")
     if not (path / "MEMORY.md").exists():
         (path / "MEMORY.md").write_text("", encoding="utf-8")
     return path
+
+
+def bundle_description(name: str) -> str:
+    try:
+        return tomllib.loads((bundle_path(name) / "bundle.toml").read_text(encoding="utf-8")) \
+            .get("description", "")
+    except (OSError, tomllib.TOMLDecodeError):
+        return ""
 
 
 def memories(bundle: str) -> list[memfile.Memory]:
@@ -73,7 +81,6 @@ class Binding:
     bundles: list[str]
     write: str
     personal: str | None = None
-    extra: dict = field(default_factory=dict)
 
     def target_for(self, mem_type: str) -> str:
         if mem_type in config.PERSONAL_TYPES and self.personal:
@@ -81,33 +88,56 @@ class Binding:
         return self.write
 
 
-def load_bindings() -> dict[str, Binding]:
-    p = config.store_dir() / PROJECTS
-    if not p.exists():
-        return {}
-    raw = tomllib.loads(p.read_text(encoding="utf-8"))
-    out = {}
+def _binding(v: dict) -> Binding:
+    bundles = list(v.get("bundles", []))
+    return Binding(bundles, v.get("write") or (bundles[-1] if bundles else ""), v.get("personal"))
+
+
+def parse_projects(text: str) -> dict[str, dict[str, Binding]]:
+    """projects.toml -> {machine: {project key: Binding}}. Every machine has its own choice
+    for every project. Entries from the first format (one choice shared by all machines)
+    are read as this machine's."""
+    raw = tomllib.loads(text)
+    out: dict[str, dict[str, Binding]] = {}
+    for machine, projects in raw.get("machines", {}).items():
+        out[machine] = {key: _binding(v) for key, v in projects.items()}
     for key, v in raw.items():
-        bundles = list(v.get("bundles", []))
-        out[key] = Binding(bundles, v.get("write") or (bundles[-1] if bundles else ""),
-                           v.get("personal"))
+        if key != "machines" and isinstance(v, dict) and "bundles" in v:
+            out.setdefault(config.machine(), {}).setdefault(key, _binding(v))
     return out
 
 
-def dump_bindings(bindings: dict[str, Binding]) -> str:
+def load_all() -> dict[str, dict[str, Binding]]:
+    p = config.store_dir() / PROJECTS
+    return parse_projects(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+
+def load_bindings() -> dict[str, Binding]:
+    """This machine's choices."""
+    return load_all().get(config.machine(), {})
+
+
+def other_machines(key: str) -> dict[str, Binding]:
+    """What the other machines load for this project."""
+    return {m: projects[key] for m, projects in load_all().items()
+            if m != config.machine() and key in projects}
+
+
+def dump_projects(everything: dict[str, dict[str, Binding]]) -> str:
     parts = []
-    for key in sorted(bindings):
-        b = bindings[key]
-        parts.append(f"[{json.dumps(key)}]\nbundles = {json.dumps(b.bundles)}\n"
-                     f"write = {json.dumps(b.write)}\n"
-                     + (f"personal = {json.dumps(b.personal)}\n" if b.personal else ""))
+    for machine in sorted(everything):
+        for key in sorted(everything[machine]):
+            b = everything[machine][key]
+            parts.append(f"[machines.{json.dumps(machine)}.{json.dumps(key)}]\n"
+                         f"bundles = {json.dumps(b.bundles)}\nwrite = {json.dumps(b.write)}\n"
+                         + (f"personal = {json.dumps(b.personal)}\n" if b.personal else ""))
     return "\n".join(parts)
 
 
 def save_binding(key: str, binding: Binding) -> None:
-    bindings = load_bindings()
-    bindings[key] = binding
-    (config.store_dir() / PROJECTS).write_text(dump_bindings(bindings), encoding="utf-8")
+    everything = load_all()
+    everything.setdefault(config.machine(), {})[key] = binding
+    (config.store_dir() / PROJECTS).write_text(dump_projects(everything), encoding="utf-8")
 
 
 def make_binding(bundles: list[str], write: str | None = None) -> Binding:
@@ -240,7 +270,7 @@ def _show(stage: int, path: str) -> str | None:
 def _resolve_conflicts() -> list[str]:
     """Merge conflicts, settled without asking:
     - MEMORY.md: union of both sides' lines (indexes are regenerated anyway)
-    - projects.toml: union of bindings, ours wins on the same project
+    - projects.toml: union of choices, ours wins on the same machine and project
     - a memory file: the newer `modified` wins; the other side is kept next to it as
       `<name>.conflict-N.md` for review
     - edited on one side, deleted on the other: keep the edit."""
@@ -256,15 +286,14 @@ def _resolve_conflicts() -> list[str]:
             lines.update(memfile.parse_index(ours))
             dest.write_text("".join(v + "\n" for v in lines.values()), encoding="utf-8")
         elif rel == PROJECTS:
-            merged = {}
-            for text in (theirs, ours):
+            merged: dict[str, dict[str, Binding]] = {}
+            for text in (theirs, ours):          # ours last: it wins on the same entry
                 try:
-                    merged.update(tomllib.loads(text))
+                    for machine, projects in parse_projects(text).items():
+                        merged.setdefault(machine, {}).update(projects)
                 except tomllib.TOMLDecodeError:
                     pass
-            dest.write_text(dump_bindings({
-                k: Binding(list(v.get("bundles", [])), v.get("write", ""), v.get("personal"))
-                for k, v in merged.items()}), encoding="utf-8")
+            dest.write_text(dump_projects(merged), encoding="utf-8")
         else:
             m_ours = memfile.frontmatter(ours).get("modified", "")
             m_theirs = memfile.frontmatter(theirs).get("modified", "")
