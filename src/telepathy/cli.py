@@ -28,9 +28,20 @@ def _need_store() -> None:
 # --- commands ----------------------------------------------------------------------------
 
 def cmd_init(a) -> None:
-    if a.machine or not (config.home() / "machine").exists():
-        config.set_machine(a.machine or config.machine())
+    named_before = (config.home() / "machine").exists()
+    old_name = config.machine()
+    if a.machine or not named_before:
+        config.set_machine(a.machine or old_name)
     how = store.init(a.url)
+    if a.machine and named_before and a.machine != old_name:
+        moved = store.rename_machine(old_name, a.machine)
+        store.sync(timeout=20)
+        print(f"Renamed this machine {old_name!r} -> {a.machine!r}"
+              + (f" ({moved} project choices moved)" if moved else ""))
+    elif not named_before and not a.machine and config.machine() in store.load_all():
+        print(f"Warning: another machine is already called {config.machine()!r} in the "
+              "store, so both would share one set of bundle choices. Give this one its own "
+              "name: tp init --machine <name>")
     where = config.store_dir()
     print({"exists": f"Store already set up at {where}",
            "cloned": f"Cloned your store into {where}",

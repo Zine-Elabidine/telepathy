@@ -214,3 +214,19 @@ def test_first_format_is_read_as_this_machines(tmp_path, monkeypatch):
     store.save_binding("local/x", store.make_binding(["x"]))
     text = (config.store_dir() / "projects.toml").read_text()
     assert '[machines."machine-a"."dir/Research"]' in text and '["dir/Research"]' not in text
+
+
+def test_rename_machine_and_same_name_warning(tmp_path, monkeypatch, remote, capsys):
+    project = setup_machine(tmp_path, monkeypatch, "machine-a", remote, "p")
+    monkeypatch.chdir(project)
+    main(["use", "personal", "my-project"])
+    main(["init", "--machine", "linux"])
+    assert "linux" in store.load_all() and "machine-a" not in store.load_all()
+
+    # a second machine whose hostname-based default collides with an existing name
+    monkeypatch.setenv("TELEPATHY_HOME", str(tmp_path / "machine-b" / ".telepathy"))
+    monkeypatch.delenv("TELEPATHY_MACHINE")
+    monkeypatch.setattr(config.socket, "gethostname", lambda: "linux")
+    capsys.readouterr()
+    main(["init", str(remote)])
+    assert "already called 'linux'" in capsys.readouterr().out

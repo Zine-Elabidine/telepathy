@@ -134,6 +134,17 @@ def dump_projects(everything: dict[str, dict[str, Binding]]) -> str:
     return "\n".join(parts)
 
 
+def rename_machine(old: str, new: str) -> int:
+    everything = load_all()
+    moved = everything.pop(old, {})
+    if not moved:
+        return 0
+    everything.setdefault(new, {}).update(moved)
+    (config.store_dir() / PROJECTS).write_text(dump_projects(everything), encoding="utf-8")
+    commit(f"tp: machine {old} is now {new}")
+    return len(moved)
+
+
 def save_binding(key: str, binding: Binding) -> None:
     everything = load_all()
     everything.setdefault(config.machine(), {})[key] = binding

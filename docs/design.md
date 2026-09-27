@@ -95,7 +95,7 @@ no admin rights or Developer Mode. *(Still to test on Windows.)*
 | Command | What it does |
 |---|---|
 | `tp init [repo-url]` | Once per machine: clone (or create) the store, install the agent hooks, optionally import existing memory folders as bundles |
-| `tp use <bundle>…` | In a project: save the binding in the store and write the agent setting for this machine |
+| `tp use <bundle>…` | In a project: choose the bundles this machine loads for it (saved in the store) and write the agent setting |
 | `tp new <bundle>` | Create an empty bundle |
 | `tp add <source>` | Install a shared bundle, e.g. `github:owner/repo[/path][@ref]` |
 | `tp update [bundle]` | Pull newer versions of installed bundles (updates the lock) |
@@ -286,6 +286,28 @@ Where the build differs from the plan above:
 - `tp import` exists so existing memory folders can become bundles; sources stay untouched.
 - **Start-hook announcements are neutral:** anything added or changed since the last
   index build is announced, including edits made outside a session.
+
+### Changed after first use: each machine chooses its own bundles (2026-09-27)
+
+The first version kept one choice per project, shared by every machine. In practice a
+machine can need its own bundle (e.g. a `windows` bundle with Windows-only knowledge), so
+`projects.toml` now keeps one choice **per machine, per project**:
+
+```toml
+[machines."linux"."github.com/me/my-project"]
+bundles = ["personal", "my-project"]
+write = "my-project"
+personal = "personal"
+```
+
+- Machine names are saved at `tp init` (`--machine NAME`, default: hostname). Renaming with
+  `tp init --machine NEW` carries the choices over. `init` warns when the name is already
+  taken in the store: two machines with the same hostname would otherwise share choices.
+- On a machine with no choice for a project, nothing is loaded. The first session there says
+  once what the other machines load and suggests the `tp use` command.
+- Bundle descriptions (`tp new NAME --description ...`) go into the index header, so the
+  agent knows what each folder is for when it saves a new memory.
+- Choices in the first format are read as the current machine's and rewritten on save.
 
 ## 15. Open questions
 

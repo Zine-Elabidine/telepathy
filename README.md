@@ -8,7 +8,7 @@ and only inside the project folder where it happened. Telepathy turns memory int
 
 ```
 tp init                          # once per machine: connect your private memory repo
-tp use personal my-project       # once per project: pick the bundles it loads
+tp use personal my-project       # per project, per machine: pick the bundles it loads
 tp add github:someone/grpo-notes # install someone else's knowledge
 ```
 
