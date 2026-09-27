@@ -263,7 +263,31 @@ Claude Code plugin package.
 **Later:** more adapters (Codex; Diwan, whose memory can be designed around bundles from the
 start; an MCP server for agents with no memory folder), an LLM merge, a bundle index page.
 
-## 14. Open questions
+## 14. What v0.1 does today (2026-09-27)
+
+Built: `init`, `use`, `new`, `import`, `status`, `sync`, `hooks [--remove]`, plus the
+hidden `hook start|end` run by Claude Code. 15 tests (two simulated machines sharing a bare
+remote, conflicts, offline, index budget, hook install/remove, link safety).
+
+Verified with real Claude Code sessions (2.1.283, Linux), driven only through `tp`:
+- a memory in `personal/` and one in the project bundle were both read through the links,
+  with `~/` permission rules written by `tp use`;
+- asked to remember one fact about the user and one about the project, Claude saved each
+  into the right bundle folder; the end hook committed and pushed it in the background.
+
+Where the build differs from the plan above:
+- **A project with no bundles is left alone.** No hint, no default `personal`: printing a
+  hint into every unbound project's context would be noise, and switching every project to
+  `personal` would hide Claude Code's own per-project memory. `tp status` says what's going on.
+- **Bundle indexes keep Claude's own lines.** Files decide what's listed; Claude's titles
+  and descriptions are kept, and only files without a line get one generated.
+- **Hooks go in the user settings via `tp init`** (a backup is kept); the plugin package
+  is v0.2.
+- `tp import` exists so existing memory folders can become bundles; sources stay untouched.
+- **Start-hook announcements are neutral:** anything added or changed since the last
+  index build is announced, including edits made outside a session.
+
+## 15. Open questions
 
 1. Windows: do junctions plus the permission rules behave as they did on Linux?
 2. Two sessions in two projects that share `personal`: both write into the same bundle.

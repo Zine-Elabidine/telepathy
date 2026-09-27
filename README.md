@@ -22,7 +22,23 @@ get pushed when the session ends.
 - **Shareable.** A bundle is a folder of markdown in a git repo. Install one like a package.
 - **Native.** Claude Code still sees ordinary auto memory: always loaded, plain files.
 
-> Status: design stage. Nothing works yet. See [docs/design.md](docs/design.md).
+> Status: **v0.1 in progress.** Works on Linux with Claude Code (tested on 2.1.283).
+> Windows is written but not yet tested. Sharing (`tp add`, `tp publish`) comes in v0.2.
+> Design: [docs/design.md](docs/design.md).
+
+## Try it (from source)
+
+```
+uv tool install git+ssh://git@github.com/Zine-Elabidine/telepathy   # gives `tp`
+tp init git@github.com:you/my-memories.git   # an empty private repo, or omit for local-only
+cd ~/code/my-project
+tp import ~/.claude/projects/<this-project>/memory my-project   # optional: bring existing memories
+tp use personal my-project
+tp status
+```
+
+Start a new Claude Code session in that project. `tp hooks --remove` undoes the hooks
+(`tp init` also keeps a copy of your settings as `settings.json.before-telepathy`).
 
 ## License
 

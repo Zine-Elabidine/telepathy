@@ -1,6 +1,6 @@
 [project]
 name = "telepathy"
-version = "0.0.1"
+version = "0.1.0.dev0"
 description = "Your coding agent's memory, on every machine: choose memory bundles per project, combine them, share them."
 readme = "README.md"
 license = "MIT"
