@@ -54,7 +54,9 @@ def project_key(path: Path) -> tuple[str, Path] | None:
     The git remote (origin first) when there is one, else the folder name."""
     root = toplevel(path)
     if root is None:
-        return None
+        # Not a git repo: the folder itself, known by its name on every machine.
+        path = path.resolve()
+        return (f"dir/{path.name}", path) if path.is_dir() and path != path.home() else None
     remotes = git(root, "remote", check=False).split()
     if remotes:
         name = "origin" if "origin" in remotes else remotes[0]

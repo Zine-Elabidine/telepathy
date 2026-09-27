@@ -82,7 +82,7 @@ def ensure_project(root: Path, session_dir: Path) -> bool:
 def _exclude(root: Path) -> None:
     """Keep the local settings file out of the project's git without touching the project:
     .git/info/exclude is local to this clone."""
-    if ok(root, "check-ignore", "-q", LOCAL_SETTINGS):
+    if not (root / ".git").exists() or ok(root, "check-ignore", "-q", LOCAL_SETTINGS):
         return
     common = Path(git(root, "rev-parse", "--git-common-dir"))
     exclude = (common if common.is_absolute() else root / common) / "info" / "exclude"

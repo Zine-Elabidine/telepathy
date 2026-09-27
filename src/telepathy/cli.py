@@ -16,7 +16,7 @@ from .gitx import GitError, project_key
 def _project(path: Path | None = None) -> tuple[str, Path]:
     found = project_key(path or Path.cwd())
     if found is None:
-        sys.exit("tp: not inside a git repository (run this from a project folder)")
+        sys.exit("tp: run this from a project folder")
     return found
 
 

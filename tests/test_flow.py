@@ -159,3 +159,20 @@ def test_links_never_delete_bundle_contents(tmp_path, monkeypatch):
     session.build("local/p", store.make_binding(["personal"]))   # proj dropped from binding
     assert not (session.session_dir("local/p") / "proj").exists()
     assert (store.bundle_path("proj") / "keep.md").exists()
+
+
+def test_plain_folder_project(tmp_path, monkeypatch, remote):
+    use_machine(tmp_path, monkeypatch, "machine-a")
+    main(["init", str(remote)])
+    folder = tmp_path / "machine-a" / "Research"
+    folder.mkdir()
+    monkeypatch.chdir(folder)
+    main(["use", "personal", "research"])
+    assert "dir/Research" in store.load_bindings()
+    assert claude.project_points_here(folder, session.session_dir("dir/Research"))
+
+    use_machine(tmp_path, monkeypatch, "machine-b")
+    main(["init", str(remote)])
+    other = tmp_path / "machine-b" / "somewhere" / "Research"
+    other.mkdir(parents=True)
+    assert "from the next session" in hook_start({"cwd": str(other)})
