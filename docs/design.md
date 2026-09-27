@@ -94,18 +94,19 @@ no admin rights or Developer Mode. *(Still to test on Windows.)*
 
 | Command | What it does |
 |---|---|
-| `telepathy init [repo-url]` | Once per machine: clone (or create) the store, install the agent hooks, optionally import existing memory folders as bundles |
-| `telepathy use <bundle>…` | In a project: save the binding in the store and write the agent setting for this machine |
-| `telepathy new <bundle>` | Create an empty bundle |
-| `telepathy add <source>` | Install a shared bundle, e.g. `github:owner/repo[/path][@ref]` |
-| `telepathy update [bundle]` | Pull newer versions of installed bundles (updates the lock) |
-| `telepathy publish <bundle> --to <repo>` | Export one of your bundles for sharing, after a scan |
-| `telepathy sync` | Pull and push the store by hand (hooks normally do it) |
-| `telepathy status` | Show this project's bundles, the index size and anything not pushed yet |
-| `telepathy move <memory> <bundle>` | Move a memory to another bundle |
+| `tp init [repo-url]` | Once per machine: clone (or create) the store, install the agent hooks, optionally import existing memory folders as bundles |
+| `tp use <bundle>…` | In a project: save the binding in the store and write the agent setting for this machine |
+| `tp new <bundle>` | Create an empty bundle |
+| `tp add <source>` | Install a shared bundle, e.g. `github:owner/repo[/path][@ref]` |
+| `tp update [bundle]` | Pull newer versions of installed bundles (updates the lock) |
+| `tp publish <bundle> --to <repo>` | Export one of your bundles for sharing, after a scan |
+| `tp sync` | Pull and push the store by hand (hooks normally do it) |
+| `tp status` | Show this project's bundles, the index size and anything not pushed yet |
+| `tp move <memory> <bundle>` | Move a memory to another bundle |
 
-The package or command name may need a variant if `telepathy` is taken. The name of the
-project stays Telepathy.
+The command is **`tp`** (like `rg`, `gh`, `uv`). The package also installs the long name
+`telepathy`. `tlp` was avoided because a well-known Linux battery tool already uses it. The
+PyPI package name may need a variant if `telepathy` is taken; the project stays Telepathy.
 
 ## 7. The session lifecycle (Claude Code adapter)
 
@@ -135,7 +136,7 @@ project stays Telepathy.
 
 ### The lifecycle *(proposed)*
 
-**Once per project per machine** (`telepathy use`, or the first start hook that finds a
+**Once per project per machine** (`tp use`, or the first start hook that finds a
 binding): write to the project's `.claude/settings.local.json`:
 
 ```json
@@ -180,7 +181,7 @@ The combined `MEMORY.md` must fit in 200 lines / 25KB, or the tail is silently d
 - If it doesn't, the biggest bundles collapse to one line each, pointing at their own index
   (`personal/MEMORY.md`). Claude reads that file when it needs it, which is the same
   progressive disclosure Claude Code already uses for topic files.
-- `telepathy status` shows the size and what collapsed.
+- `tp status` shows the size and what collapsed.
 
 ## 9. Sync and conflicts *(proposed)*
 
@@ -207,7 +208,7 @@ authors = ["…"]
 
 - `add` clones it into `~/.telepathy/installed/` and records the commit in `installed.lock`.
   Your other machines install the same commit at their next sync.
-- Installed bundles are read-only. To change one, fork it: `telepathy new mine --from grpo-notes`.
+- Installed bundles are read-only. To change one, fork it: `tp new mine --from grpo-notes`.
 - `publish` copies a bundle out to a repo you choose, after:
   - a secrets scan: token patterns (`github_pat_`, `sk-`, `AKIA`, private keys), emails;
   - your own deny list (e.g. company and client names), kept in the store config;
@@ -225,7 +226,7 @@ authors = ["…"]
 - Permission rules are scoped to `~/.telepathy/`, so the agent gets nothing beyond its memory.
 - Installed bundles are someone else's text in your agent's context: treat them like code
   you install. Read-only, pinned to a commit, updated only when you ask.
-- If `blockReadsOutsideWorkingDirectories` is on, `telepathy use` warns that the setting
+- If `blockReadsOutsideWorkingDirectories` is on, `tp use` warns that the setting
   will be ignored instead of failing silently.
 
 ## 12. Prior art and how Telepathy differs

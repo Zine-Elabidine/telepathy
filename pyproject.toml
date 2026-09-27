@@ -14,6 +14,7 @@ keywords = ["claude-code", "agents", "memory", "knowledge", "sync"]
 
 [project.scripts]
 telepathy = "telepathy:main"
+tp = "telepathy:main"
 
 [build-system]
 requires = ["uv_build>=0.11.24,<0.12.0"]

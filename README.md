@@ -7,9 +7,9 @@ and only inside the project folder where it happened. Telepathy turns memory int
 **bundles** you choose per project:
 
 ```
-telepathy init                          # once per machine: connect your private memory repo
-telepathy use personal my-project       # once per project: pick the bundles it loads
-telepathy add github:someone/grpo-notes # install someone else's knowledge
+tp init                          # once per machine: connect your private memory repo
+tp use personal my-project       # once per project: pick the bundles it loads
+tp add github:someone/grpo-notes # install someone else's knowledge
 ```
 
 Then just open Claude Code. It pulls the latest memories from your other machines and
