@@ -40,6 +40,20 @@ tp status
 Start a new Claude Code session in that project. `tp hooks --remove` undoes the hooks
 (`tp init` also keeps a copy of your settings as `settings.json.before-telepathy`).
 
+## Other agents
+
+Claude Code is wired up through hooks. Any other agent can use the same memory through
+one call at its start and one at its end:
+
+```
+tp session start [--cwd DIR]   # pull, rebuild; prints JSON: folder, index, bundles, write, personal
+tp session end [--cwd DIR]     # file stray memories, regenerate indexes, commit, push in the background
+```
+
+The agent loads `index` once at its start, reads memory files under `folder`, and saves a new
+memory as `<folder>/<bundle>/<name>.md`: user and feedback memories in `personal`, project
+and reference ones in `write`. [Diwan](https://github.com/Zine-Elabidine/diwan) does this.
+
 ## License
 
 MIT

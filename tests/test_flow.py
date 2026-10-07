@@ -306,3 +306,27 @@ def test_written_files_use_lf(tmp_path, monkeypatch, remote):
                session.session_dir("github.com/me/my-project") / "MEMORY.md"]
     for path in written:
         assert b"\r\n" not in path.read_bytes(), path
+
+
+def test_session_command_for_other_agents(tmp_path, monkeypatch, remote, capsys):
+    project = setup_machine(tmp_path, monkeypatch, "machine-a", remote, "code/my-project")
+    capsys.readouterr()
+    main(["session", "start", "--cwd", str(project)])
+    assert json.loads(capsys.readouterr().out)["folder"] is None     # no bundles chosen yet
+    monkeypatch.chdir(project)
+    main(["use", "personal", "my-project"])
+    capsys.readouterr()
+
+    main(["session", "start", "--cwd", str(project)])
+    got = json.loads(capsys.readouterr().out)
+    sdir = Path(got["folder"])
+    assert got["write"] == "my-project" and got["personal"] == "personal"
+    assert "## my-project" in got["index"]
+
+    # the agent saves a memory in the write bundle; the session end files it and commits
+    memory(sdir / "my-project" / "project_db.md", "project-db", "project", "DB is Postgres 17")
+    monkeypatch.setattr(claude, "spawn_background", lambda *a: store.sync())
+    main(["session", "end", "--cwd", str(project)])
+    index = (store.bundle_path("my-project") / "MEMORY.md").read_text(encoding="utf-8")
+    assert "](project_db.md)" in index
+    assert "project_db.md" in run("git", "--git-dir", str(remote), "show", "--stat", "main")

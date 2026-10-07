@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 import traceback
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -237,10 +238,22 @@ def _hint_other_machines(key: str) -> str:
     return "\n".join(lines)
 
 
-def hook_start(payload: dict) -> str:
+@dataclass
+class _Opened:
+    key: str
+    root: Path
+    binding: store.Binding
+    index: session.Index
+    changed: list[tuple[str, str, str]]
+    conflicts: list[str]
+
+
+def _open(cwd: Path) -> _Opened | str:
+    """Start a session in `cwd` for any agent: pull, rebuild the session folder. A string
+    (maybe empty) when this project loads no bundles here: what to tell the user."""
     if not store.exists():
         return ""
-    found = project_key(Path(payload.get("cwd") or os.getcwd()))
+    found = project_key(cwd)
     if found is None:
         return ""
     key, root = found
@@ -251,24 +264,45 @@ def hook_start(payload: dict) -> str:
     session.harvest(key, binding)             # anything left over from a session that crashed
     res = store.sync(push=False, timeout=10)
     index = session.build(key, binding)
-    first = claude.ensure_project(root, session.session_dir(key))
+    changed = session.arrivals(old_state.get("head", ""), binding.bundles)
+    return _Opened(key, root, binding, index, changed, res.conflicts)
+
+
+def hook_start(payload: dict) -> str:
+    opened = _open(Path(payload.get("cwd") or os.getcwd()))
+    if isinstance(opened, str):
+        return opened
+    sdir = session.session_dir(opened.key)
+    first = claude.ensure_project(opened.root, sdir)
 
     out = []
     if first:
         out.append("Telepathy: this project's memory now comes from the bundles "
-                   f"{', '.join(binding.bundles)}. Claude Code switches to them from the next "
-                   f"session. Until then, this is that memory (files under "
-                   f"{session.session_dir(key)}):\n\n{index.text}")
-    else:
-        changed = session.arrivals(old_state.get("head", ""), binding.bundles)
-        if changed:
-            out.append("Telepathy: these memories were added or changed (usually on another "
-                       "machine) after your memory index was loaded. Read them when relevant:")
-            out += [session.index_line_for(b, f) for _, b, f in changed]
-    if res.conflicts:
-        out.append("Telepathy: resolved sync conflicts in " + ", ".join(res.conflicts)
+                   f"{', '.join(opened.binding.bundles)}. Claude Code switches to them from the "
+                   f"next session. Until then, this is that memory (files under "
+                   f"{sdir}):\n\n{opened.index.text}")
+    elif opened.changed:
+        out.append("Telepathy: these memories were added or changed (usually on another "
+                   "machine) after your memory index was loaded. Read them when relevant:")
+        out += [session.index_line_for(b, f) for _, b, f in opened.changed]
+    if opened.conflicts:
+        out.append("Telepathy: resolved sync conflicts in " + ", ".join(opened.conflicts)
                    + "; the other versions are saved next to them as *.conflict-N.md.")
     return "\n".join(out)
+
+
+def session_start(cwd: Path) -> dict:
+    """`tp session start --json`: what an agent other than Claude Code needs to load this
+    project's memory itself. It reads `index` once at its start (a frozen snapshot), reads
+    memory files under `folder`, and saves new ones as <folder>/<bundle>/<name>.md with
+    `personal` for user/feedback memories and `write` for project/reference ones."""
+    opened = _open(cwd)
+    if isinstance(opened, str):
+        return {"folder": None, "message": opened}
+    b = opened.binding
+    return {"folder": str(session.session_dir(opened.key)), "key": opened.key,
+            "bundles": b.bundles, "write": b.write, "personal": b.personal,
+            "index": opened.index.text, "conflicts": opened.conflicts}
 
 
 def hook_end(payload: dict) -> str:
@@ -287,6 +321,21 @@ def hook_end(payload: dict) -> str:
     if store.remote_branch() is not None:
         claude.spawn_background("sync", "--quiet")
     return ""
+
+
+def cmd_session(a) -> None:
+    """`tp session start|end` for agents other than Claude Code: never fails loudly."""
+    cwd = Path(a.cwd or os.getcwd())
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        if a.event == "start":
+            print(json.dumps(session_start(cwd), ensure_ascii=False))
+        else:
+            hook_end({"cwd": str(cwd)})
+    except Exception as e:
+        if a.event == "start":
+            print(json.dumps({"folder": None, "message": f"telepathy failed: {e}"}))
+        print(f"telepathy: session {a.event} failed: {e}", file=sys.stderr)
 
 
 def cmd_hook(a) -> None:
@@ -347,6 +396,11 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("hooks", help="install (or --remove) the Claude Code hooks")
     s.add_argument("--remove", action="store_true")
     s.set_defaults(fn=cmd_hooks)
+
+    s = sub.add_parser("session", help="start or end a session for another agent (JSON out)")
+    s.add_argument("event", choices=["start", "end"])
+    s.add_argument("--cwd", help="the project folder (default: the current one)")
+    s.set_defaults(fn=cmd_session)
 
     s = sub.add_parser("hook", help=argparse.SUPPRESS)
     s.add_argument("event", choices=["start", "end"])
