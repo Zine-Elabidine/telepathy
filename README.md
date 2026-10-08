@@ -1,4 +1,4 @@
-![Telepathy](docs/banner.png)
+![Telepathy](docs/banner-wide.png)
 
 # Telepathy
 
