@@ -1,3 +1,5 @@
+![Telepathy](docs/banner.png)
+
 # Telepathy
 
 Your coding agent's memory, on every machine.
