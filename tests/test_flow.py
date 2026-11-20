@@ -330,3 +330,84 @@ def test_session_command_for_other_agents(tmp_path, monkeypatch, remote, capsys)
     index = (store.bundle_path("my-project") / "MEMORY.md").read_text(encoding="utf-8")
     assert "](project_db.md)" in index
     assert "project_db.md" in run("git", "--git-dir", str(remote), "show", "--stat", "main")
+
+
+# --- Codex ----------------------------------------------------------------------------------
+
+def test_codex_hooks_install_keep_others_and_remove(tmp_path, monkeypatch):
+    from telepathy import codex
+    other = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo hi"}]}],
+                       "SessionStart": [{"hooks": [{"type": "command", "command": "echo hi"}]}]}}
+    codex.hooks_file().parent.mkdir(parents=True)
+    codex.hooks_file().write_text(json.dumps(other), encoding="utf-8")
+    main(["hooks", "--codex"])
+    main(["hooks", "--codex"])                       # idempotent
+    data = json.loads(codex.hooks_file().read_text(encoding="utf-8"))["hooks"]
+    assert len(data["SessionStart"]) == 2 and data["Stop"] == other["hooks"]["Stop"]
+    start = data["SessionStart"][1]["hooks"][0]
+    assert start["command"].endswith("telepathy hook start --agent codex")
+    assert start["additionalContextLimit"] == 0
+    assert data["SessionEnd"][0]["hooks"][0]["timeout"] <= 3   # Codex caps SessionEnd at 3 s
+    assert codex.hooks_installed() and codex.memory_writable()
+    assert (codex.hooks_file().parent / "hooks.json.before-telepathy").exists()
+    assert not claude.user_settings().exists()       # Claude Code settings untouched
+    assert codex.remove_hooks()
+    data = json.loads(codex.hooks_file().read_text(encoding="utf-8"))["hooks"]
+    assert data == other["hooks"]
+
+
+def test_codex_writable_root_only_appends(tmp_path, monkeypatch):
+    from telepathy import codex
+    toml = codex.config_dir() / "config.toml"
+    toml.parent.mkdir(parents=True)
+    before = '[projects."/x"]\ntrust_level = "trusted"\n'
+    toml.write_text(before, encoding="utf-8")
+    assert "now write" in codex.ensure_writable()
+    assert codex.ensure_writable() == ""             # second time: nothing to do
+    text = toml.read_text(encoding="utf-8")
+    assert text.startswith(before) and codex.memory_writable()
+    # a table that already exists is never rewritten: the user is told what to add
+    toml.write_text('[sandbox_workspace_write]\nnetwork_access = true\n', encoding="utf-8")
+    msg = codex.ensure_writable()
+    assert "Add" in msg and toml.read_text(encoding="utf-8").endswith("network_access = true\n")
+
+
+def test_codex_session_round_trip(tmp_path, monkeypatch, remote):
+    from telepathy.cli import codex_end, codex_start
+    project = setup_machine(tmp_path, monkeypatch, "machine-a", remote, "p")
+    monkeypatch.chdir(project)
+    main(["use", "personal", "my-project"])
+    memory(store.bundle_path("personal") / "user_role.md", "user-role", "user", "Is an AI engineer")
+    store.write_index("personal")
+    (project / ".claude/settings.local.json").unlink()
+
+    out = json.loads(codex_start({"cwd": str(project), "source": "startup"}))["hookSpecificOutput"]
+    assert out["hookEventName"] == "SessionStart"
+    ctx = out["additionalContext"]
+    sdir = session.session_dir("github.com/me/my-project")
+    assert sdir.as_posix() in ctx and "metadata:" in ctx            # where and how to save
+    assert "](personal/user_role.md)" in ctx                         # the index itself
+    assert not (project / ".claude/settings.local.json").exists()    # no Claude Code setup
+    # every start gets the full memory again (Codex keeps nothing between sessions)
+    assert "user_role.md" in json.loads(codex_start({"cwd": str(project)}))[
+        "hookSpecificOutput"]["additionalContext"]
+
+    # Codex saves a memory at the top of the folder and adds its line to MEMORY.md
+    memory(sdir / "feedback_short.md", "feedback-short", "feedback", "Keep replies short")
+    index = sdir / "MEMORY.md"
+    text = index.read_text(encoding="utf-8").replace(
+        "## personal\n", "## personal\n- [Short replies](personal/feedback_short.md) — he asked\n")
+    index.write_text(text, encoding="utf-8")
+    spawned = []
+    monkeypatch.setattr(claude, "spawn_background", lambda *a: spawned.append(a))
+    assert codex_end({"cwd": str(project)}) == ""
+    assert spawned == [("session", "end", "--cwd", str(project))]    # detached, never inline
+    main(["session", "end", "--cwd", str(project)])                  # what the detached run does
+    assert (store.bundle_path("personal") / "feedback_short.md").exists()
+    assert "[Short replies](feedback_short.md)" in store.read_index("personal")["feedback_short.md"]
+
+
+def test_codex_unbound_project_says_nothing(tmp_path, monkeypatch, remote):
+    from telepathy.cli import codex_start
+    project = setup_machine(tmp_path, monkeypatch, "machine-a", remote, "p")
+    assert codex_start({"cwd": str(project)}) == ""

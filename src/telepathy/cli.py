@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from . import __version__, claude, config, memfile, session, store
+from . import __version__, claude, codex, config, memfile, session, store
 from .gitx import GitError, key_to_dirname, project_key
 
 
@@ -145,6 +145,10 @@ def cmd_status(a) -> None:
     if not store.exists():
         return
     print(f"hooks: {'installed' if claude.hooks_installed() else 'NOT installed (tp init)'}")
+    if codex.hooks_installed():
+        print("codex hooks: installed"
+              + ("" if codex.memory_writable() else
+                 f"; but Codex cannot write to {codex.writable_root()} (tp hooks --codex)"))
     print(f"bundles: {', '.join(store.list_bundles()) or '(none)'}")
     rb = store.remote_branch()
     print(f"sync: {'origin/' + rb[1] if rb else 'no remote (local only)'}"
@@ -192,13 +196,19 @@ def cmd_sync(a) -> None:
 
 
 def cmd_hooks(a) -> None:
+    agent = codex if a.codex else claude
     if a.remove:
-        print("Removed Telepathy hooks." if claude.remove_hooks() else "No Telepathy hooks found.")
-    else:
-        print(f"Hooks installed in {claude.install_hooks()}")
+        print("Removed Telepathy hooks." if agent.remove_hooks() else "No Telepathy hooks found.")
+        return
+    print(f"Hooks installed in {agent.install_hooks()}")
+    if a.codex:
+        if msg := codex.ensure_writable():
+            print(msg)
+        print("Codex runs new hooks only once you trust them: open Codex, type /hooks, "
+              "and approve the two Telepathy hooks.")
 
 
-# --- hooks (run by Claude Code) ------------------------------------------------------------
+# --- hooks (run by Claude Code and Codex) --------------------------------------------------
 
 def _payload() -> dict:
     try:
@@ -291,6 +301,33 @@ def hook_start(payload: dict) -> str:
     return "\n".join(out)
 
 
+def codex_start(payload: dict) -> str:
+    """Codex has no memory of its own: give it the whole index and the saving rules at
+    every start (startup, resume, clear, compact), as SessionStart JSON."""
+    opened = _open(Path(payload.get("cwd") or os.getcwd()))
+    if isinstance(opened, str):
+        text = opened
+    else:
+        b = opened.binding
+        text = codex.context(session.session_dir(opened.key), b.write, b.personal,
+                             opened.index.collapsed, opened.index.text)
+        if opened.conflicts:
+            text += ("\nTelepathy: resolved sync conflicts in " + ", ".join(opened.conflicts)
+                     + "; the other versions are saved next to them as *.conflict-N.md.\n")
+    if not text:
+        return ""
+    return json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
+                                              "additionalContext": text}}, ensure_ascii=False)
+
+
+def codex_end(payload: dict) -> str:
+    """Codex gives SessionEnd at most 3 seconds: do the real work detached, so a slow
+    commit is never killed halfway. The next start harvests anyway if this never runs."""
+    if store.exists():
+        claude.spawn_background("session", "end", "--cwd", payload.get("cwd") or os.getcwd())
+    return ""
+
+
 def session_start(cwd: Path) -> dict:
     """`tp session start --json`: what an agent other than Claude Code needs to load this
     project's memory itself. It reads `index` once at its start (a frozen snapshot), reads
@@ -344,7 +381,9 @@ def cmd_hook(a) -> None:
         # Windows pipes default to the ANSI code page; memories can hold any character.
         sys.stdin.reconfigure(encoding="utf-8")
         sys.stdout.reconfigure(encoding="utf-8")
-        text = (hook_start if a.event == "start" else hook_end)(_payload())
+        handlers = {"claude": (hook_start, hook_end), "codex": (codex_start, codex_end)}
+        start, end = handlers[a.agent]
+        text = (start if a.event == "start" else end)(_payload())
         if text:
             print(text)
     except Exception:
@@ -393,8 +432,9 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--quiet", action="store_true")
     s.set_defaults(fn=cmd_sync)
 
-    s = sub.add_parser("hooks", help="install (or --remove) the Claude Code hooks")
+    s = sub.add_parser("hooks", help="install (or --remove) the Claude Code or --codex hooks")
     s.add_argument("--remove", action="store_true")
+    s.add_argument("--codex", action="store_true", help="Codex instead of Claude Code")
     s.set_defaults(fn=cmd_hooks)
 
     s = sub.add_parser("session", help="start or end a session for another agent (JSON out)")
@@ -404,6 +444,7 @@ def main(argv: list[str] | None = None) -> None:
 
     s = sub.add_parser("hook", help=argparse.SUPPRESS)
     s.add_argument("event", choices=["start", "end"])
+    s.add_argument("--agent", choices=["claude", "codex"], default="claude")
     s.set_defaults(fn=cmd_hook)
 
     a = p.parse_args(argv)

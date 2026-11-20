@@ -10,10 +10,11 @@ def run(*args, cwd=None):
 
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
-    """Every test gets its own Telepathy home, Claude config dir and git identity, so the
+    """Every test gets its own Telepathy home, Claude and Codex config dirs and git identity, so the
     real ~/.telepathy and ~/.claude are never touched."""
     monkeypatch.setenv("TELEPATHY_HOME", str(tmp_path / "machine-a" / ".telepathy"))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "machine-a" / ".claude"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "machine-a" / ".codex"))
     monkeypatch.setenv("TELEPATHY_MACHINE", "machine-a")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
@@ -27,6 +28,7 @@ def isolated(tmp_path, monkeypatch):
 def use_machine(tmp_path: Path, monkeypatch, name: str) -> None:
     monkeypatch.setenv("TELEPATHY_HOME", str(tmp_path / name / ".telepathy"))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / name / ".claude"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / name / ".codex"))
     monkeypatch.setenv("TELEPATHY_MACHINE", name)
 
 

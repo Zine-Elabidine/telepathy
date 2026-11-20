@@ -24,7 +24,8 @@ get pushed when the session ends.
 - **Shareable.** A bundle is a folder of markdown in a git repo. Install one like a package.
 - **Native.** Claude Code still sees ordinary auto memory: always loaded, plain files.
 
-> Status: **v0.1 in progress.** Works on Linux with Claude Code (tested on 2.1.283).
+> Status: **v0.1 in progress.** Works on Linux with Claude Code (tested on 2.1.283)
+> and Codex CLI (0.171).
 > Windows is written but not yet tested. Sharing (`tp add`, `tp publish`) comes in v0.2.
 > Design: [docs/design.md](docs/design.md).
 
@@ -42,10 +43,22 @@ tp status
 Start a new Claude Code session in that project. `tp hooks --remove` undoes the hooks
 (`tp init` also keeps a copy of your settings as `settings.json.before-telepathy`).
 
+## Codex
+
+```
+tp hooks --codex
+```
+
+This adds two hooks to `~/.codex/hooks.json` and lets Codex's sandbox write to `~/.telepathy`
+(appended to `~/.codex/config.toml`, with a backup). Codex runs a new hook only once you trust
+it: open Codex, type `/hooks` and approve the two Telepathy hooks. From then on every Codex
+session in a project gets the same memory as Claude Code there, with the rules for saving to
+it; what Codex saves is pushed when the session ends. `tp hooks --codex --remove` undoes it.
+
 ## Other agents
 
-Claude Code is wired up through hooks. Any other agent can use the same memory through
-one call at its start and one at its end:
+Claude Code and Codex are wired up through hooks. Any other agent can use the same memory
+through one call at its start and one at its end:
 
 ```
 tp session start [--cwd DIR]   # pull, rebuild; prints JSON: folder, index, bundles, write, personal
